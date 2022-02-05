@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"igabir98/simpleTODO/engine"
 	"igabir98/simpleTODO/models"
 	"net/http"
 
@@ -9,9 +11,22 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-var tasks []models.Task
+type App struct {
+	db *engine.BoltDB
+}
+
+var app App
 
 func main() {
+	fmt.Println("test")
+	db, err := engine.NewBoltDB()
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	app.db = db
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 
@@ -30,7 +45,7 @@ func create(w http.ResponseWriter, req *http.Request) {
 	var task models.Task
 	json.NewDecoder(req.Body).Decode(&task)
 
-	tasks = append(tasks, task)
+	app.db.CreateTask(&task)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -40,5 +55,7 @@ func create(w http.ResponseWriter, req *http.Request) {
 func getAll(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusFound)
+
+	tasks, _ := app.db.GetAll()
 	json.NewEncoder(w).Encode(tasks)
 }
