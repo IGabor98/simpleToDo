@@ -57,6 +57,10 @@ func (b *BoltDB) CreateTask(task *models.Task) (taskID string, err error) {
 	err = b.db.Update(func(tx *bolt.Tx) (err error) {
 		bkt := tx.Bucket([]byte(tasksBucket))
 
+		if bkt.Get([]byte(task.ID)) != nil {
+			return errors.Errorf("key %s already in store", task.ID)
+		}
+
 		err = bkt.Put([]byte(task.ID), taskBytes)
 
 		if err != nil {
@@ -73,24 +77,13 @@ func (b *BoltDB) CreateTask(task *models.Task) (taskID string, err error) {
 	return task.ID, nil
 }
 
-func (s *BoltDB) prepareNewTask(task *models.Task) *models.Task {
-	if task.ID == "" {
-		task.ID = uuid.New().String()
-	}
-
-	if task.Timestamp.IsZero() {
-		task.Timestamp = time.Now()
-	}
-
-	return task
-}
-
-func (b *BoltDB) Get(taskID string) (task models.Task, err error) {
+func (b *BoltDB) GetTask(taskID string) (task models.Task, err error) {
 
 	err = b.db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(tasksBucket))
 
 		value := bkt.Get([]byte(taskID))
+
 		if value == nil {
 			return errors.Errorf("no value for %s", taskID)
 		}
@@ -103,7 +96,29 @@ func (b *BoltDB) Get(taskID string) (task models.Task, err error) {
 	return task, err
 }
 
-func (b *BoltDB) GetAll() (task *[]models.Task, err error) {
+func (b *BoltDB) UpdateTask(task *models.Task) (taskID string, err error) {
+	taskBytes, err := json.Marshal(task)
+
+	if err != nil {
+		return taskID, err
+	}
+
+	err = b.db.Update(func(tx *bolt.Tx) (err error) {
+		bkt := tx.Bucket([]byte(tasksBucket))
+
+		if bkt.Get([]byte(task.ID)) == nil {
+			return errors.Errorf("key %s not exist in store", task.ID)
+		}
+
+		err = b.save(bkt, task.ID, taskBytes)
+
+		return err
+	})
+
+	return taskID, err
+}
+
+func (b *BoltDB) GetAllTasks() (task *[]models.Task, err error) {
 	var tasks []models.Task
 
 	err = b.db.View(func(tx *bolt.Tx) error {
@@ -125,5 +140,41 @@ func (b *BoltDB) GetAll() (task *[]models.Task, err error) {
 
 	})
 
+	if err != nil {
+		return nil, err
+	}
+
 	return &tasks, nil
+}
+
+func (b *BoltDB) DeleteTask(taskID string) (err error) {
+	return b.db.Update(func(tx *bolt.Tx) (err error) {
+		bkt := tx.Bucket([]byte(tasksBucket))
+
+		if bkt.Get([]byte(taskID)) == nil {
+			return errors.Errorf("key %s not exist in store", taskID)
+		}
+
+		err = bkt.Delete([]byte(taskID))
+
+		return err
+	})
+}
+
+func (b *BoltDB) save(bkt *bolt.Bucket, recordID string, recordBytes []byte) (err error) {
+	err = bkt.Put([]byte(recordID), recordBytes)
+
+	return err
+}
+
+func (s *BoltDB) prepareNewTask(task *models.Task) *models.Task {
+	if task.ID == "" {
+		task.ID = uuid.New().String()
+	}
+
+	if task.Timestamp.IsZero() {
+		task.Timestamp = time.Now()
+	}
+
+	return task
 }

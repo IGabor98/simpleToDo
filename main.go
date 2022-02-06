@@ -7,6 +7,7 @@ import (
 	"igabir98/simpleTODO/models"
 	"net/http"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -18,7 +19,6 @@ type App struct {
 var app App
 
 func main() {
-	fmt.Println("test")
 	db, err := engine.NewBoltDB()
 
 	if err != nil {
@@ -31,8 +31,11 @@ func main() {
 	r.Use(middleware.Logger)
 
 	r.Get("/", welcome)
-	r.Post("/tasks", create)
 	r.Get("/tasks", getAll)
+	r.Get("/tasks/{taskID}", getTask)
+	r.Post("/tasks", create)
+	r.Put("/tasks", update)
+	r.Delete("/tasks/{taskID}", deleteTask)
 
 	http.ListenAndServe(":3000", r)
 }
@@ -44,11 +47,36 @@ func welcome(w http.ResponseWriter, r *http.Request) {
 func create(w http.ResponseWriter, req *http.Request) {
 	var task models.Task
 	json.NewDecoder(req.Body).Decode(&task)
+	w.Header().Set("Content-Type", "application/json")
 
-	app.db.CreateTask(&task)
+	_, err := app.db.CreateTask(&task)
+
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+
+	json.NewEncoder(w).Encode(task)
+}
+
+func update(w http.ResponseWriter, req *http.Request) {
+	var task models.Task
+	json.NewDecoder(req.Body).Decode(&task)
+
+	_, err := app.db.UpdateTask(&task)
+
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusOK)
+
 	json.NewEncoder(w).Encode(task)
 }
 
@@ -56,6 +84,46 @@ func getAll(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusFound)
 
-	tasks, _ := app.db.GetAll()
+	tasks, _ := app.db.GetAllTasks()
+
 	json.NewEncoder(w).Encode(tasks)
+}
+
+func getTask(w http.ResponseWriter, req *http.Request) {
+	taskID := chi.URLParam(req, "taskID")
+
+	w.Header().Set("Content-Type", "application/json")
+
+	tasks, err := app.db.GetTask(taskID)
+
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusFound)
+
+	json.NewEncoder(w).Encode(tasks)
+}
+
+func deleteTask(w http.ResponseWriter, req *http.Request) {
+	taskID := chi.URLParam(req, "taskID")
+
+	w.Header().Set("Content-Type", "application/json")
+
+	err := app.db.DeleteTask(taskID)
+
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+
+}
+
+func init() {
+	govalidator.SetFieldsRequiredByDefault(true)
 }
